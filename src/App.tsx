@@ -7,7 +7,9 @@ import {
   Container,
   Dialog,
   FormControl,
+  IconButton,
   InputLabel,
+  Link,
   MenuItem,
   Paper,
   Pagination,
@@ -20,9 +22,12 @@ import {
   TableHead,
   TableRow,
   TableSortLabel,
+  Tooltip,
   Toolbar,
   Typography,
 } from "@mui/material";
+import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
+import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import {
   useCreateEmployeeMutation,
   useDeleteEmployeeMutation,
@@ -35,6 +40,7 @@ import type { Employee } from "./features/employees/types/employee.types";
 import type { EmployeeFormValues } from "./features/employees/schemas/employeeSchema";
 import { EmployeeForm } from "./features/employees/components/EmployeeForm";
 import { EmployeeSearch } from "./features/employees/components/EmployeeSearch";
+import { EmployeeSearchResult } from "./features/employees/components/EmployeeSearchResult";
 import { DeleteEmployeeDialog } from "./features/employees/components/DeleteEmployeeDialog";
 import { ErrorState, LoadingState } from "./components/common/AsyncState";
 import type { Country } from "./features/employees/types/employee.types";
@@ -103,8 +109,15 @@ export function EmployeeTable({
     rowsPerPage === -1 ? 1 : Math.ceil(employees.length / rowsPerPage),
   );
   const currentPage = Math.min(page, totalPages);
-  const sortedEmployees = sortKey
-    ? [...employees].sort((firstEmployee, secondEmployee) => {
+  const paginatedEmployees =
+    rowsPerPage === -1
+      ? employees
+      : employees.slice(
+          (currentPage - 1) * rowsPerPage,
+          currentPage * rowsPerPage,
+        );
+  const visibleEmployees = sortKey
+    ? [...paginatedEmployees].sort((firstEmployee, secondEmployee) => {
         const comparison = firstEmployee[sortKey].localeCompare(
           secondEmployee[sortKey],
           undefined,
@@ -117,14 +130,7 @@ export function EmployeeTable({
 
         return firstEmployee.id.localeCompare(secondEmployee.id);
       })
-    : employees;
-  const visibleEmployees =
-    rowsPerPage === -1
-      ? sortedEmployees
-      : sortedEmployees.slice(
-          (currentPage - 1) * rowsPerPage,
-          currentPage * rowsPerPage,
-        );
+    : paginatedEmployees;
   const firstVisibleIndex =
     rowsPerPage === -1 ? 0 : (currentPage - 1) * rowsPerPage;
 
@@ -137,7 +143,7 @@ export function EmployeeTable({
   };
 
   return (
-    <Paper sx={{ overflowX: "auto" }}>
+    <Paper variant="outlined" sx={{ overflowX: "auto" }}>
       <Table aria-label="employees" sx={{ minWidth: 680 }}>
         <TableHead>
           <TableRow>
@@ -197,17 +203,29 @@ export function EmployeeTable({
                 </Stack>
               </TableCell>
               <TableCell>
-                <Stack direction="row">
-                  <Button size="small" onClick={() => onEdit(employee)}>
-                    Edit
-                  </Button>
-                  <Button
-                    size="small"
-                    color="error"
-                    onClick={() => onDelete(employee)}
+                <Stack direction="row" gap={0.5}>
+                  <Tooltip title={`Edit ${formatNameOrCountry(employee.name)}`}>
+                    <IconButton
+                      size="small"
+                      color="primary"
+                      aria-label={`Edit ${formatNameOrCountry(employee.name)}`}
+                      onClick={() => onEdit(employee)}
+                    >
+                      <EditOutlinedIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                  <Tooltip
+                    title={`Delete ${formatNameOrCountry(employee.name)}`}
                   >
-                    Delete
-                  </Button>
+                    <IconButton
+                      size="small"
+                      color="error"
+                      aria-label={`Delete ${formatNameOrCountry(employee.name)}`}
+                      onClick={() => onDelete(employee)}
+                    >
+                      <DeleteOutlineIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
                 </Stack>
               </TableCell>
             </TableRow>
@@ -353,7 +371,10 @@ export function App() {
       <Container maxWidth="lg" sx={{ py: { xs: 3, sm: 5 } }}>
         <Stack gap={3}>
           <Box>
-            <Typography variant="h4" component="h2" gutterBottom>
+            <Typography variant="overline" color="primary.main">
+              Directory
+            </Typography>
+            <Typography variant="h4" component="h2" gutterBottom sx={{ mt: 0.5 }}>
               Employees
             </Typography>
             <Typography color="text.secondary">
@@ -361,9 +382,19 @@ export function App() {
             </Typography>
           </Box>
           <Stack direction="column" gap={2}>
-            <Paper sx={{ p: { xs: 2, sm: 3 }, width: "100%" }}>
+            <Paper
+              variant="outlined"
+              sx={{ p: { xs: 2, sm: 3 }, width: "100%" }}
+            >
               <Stack gap={2}>
-                <Typography variant="h6">Search by employee ID</Typography>
+                <Box>
+                  <Typography variant="overline" color="primary.main">
+                    Quick lookup
+                  </Typography>
+                  <Typography variant="h6" component="h3" sx={{ mt: 0.25 }}>
+                    Search by employee ID
+                  </Typography>
+                </Box>
                 <EmployeeSearch
                   isLoading={searchState.isLoading}
                   onSearch={handleSearch}
@@ -375,12 +406,7 @@ export function App() {
                 {searchState.isLoading && (
                   <LoadingState label="Searching employee..." />
                 )}
-                {searchResult && (
-                  <Alert severity="success">
-                    <strong>{searchResult.name}</strong> · {searchResult.email}{" "}
-                    · {searchResult.mobile} · {searchResult.country}
-                  </Alert>
-                )}
+                {searchResult && <EmployeeSearchResult employee={searchResult} />}
                 {searchError === "not-found" && (
                   <Alert severity="info">
                     Employee not found. No employee matches this ID.
@@ -398,7 +424,14 @@ export function App() {
             justifyContent="space-between"
             gap={2}
           >
-            <Typography variant="h6">Employee list</Typography>
+            <Box>
+              <Typography variant="overline" color="primary.main">
+                Directory records
+              </Typography>
+              <Typography variant="h6" component="h3" sx={{ mt: 0.25 }}>
+                Employee list
+              </Typography>
+            </Box>
             <Button variant="contained" onClick={() => setFormEmployee(null)}>
               ＋ Add Employee
             </Button>
@@ -464,6 +497,31 @@ export function App() {
         onClose={() => setNotice("")}
         message={notice}
       />
+      <Paper
+        elevation={3}
+        sx={{
+          position: "fixed",
+          right: { xs: 12, sm: 20 },
+          bottom: { xs: 12, sm: 20 },
+          zIndex: (theme) => theme.zIndex.appBar,
+          px: 1.5,
+          py: 0.75,
+          border: 1,
+          borderColor: "divider",
+        }}
+      >
+        <Link
+          href="https://github.com/YashrajKamble"
+          target="_blank"
+          rel="noopener noreferrer"
+          underline="hover"
+          color="text.secondary"
+          aria-label="Made by Yashraj Kamble, open GitHub profile"
+          sx={{ fontSize: { xs: "0.75rem", sm: "0.8125rem" }, fontWeight: 600 }}
+        >
+          Made by Yashraj Kamble
+        </Link>
+      </Paper>
     </>
   );
 }
