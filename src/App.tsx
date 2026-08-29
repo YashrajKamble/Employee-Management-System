@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import {
   Alert,
   AppBar,
@@ -38,12 +38,23 @@ import {
 } from "./features/employees/api/employeeApi";
 import type { Employee } from "./features/employees/types/employee.types";
 import type { EmployeeFormValues } from "./features/employees/schemas/employeeSchema";
-import { EmployeeForm } from "./features/employees/components/EmployeeForm";
 import { EmployeeSearch } from "./features/employees/components/EmployeeSearch";
 import { EmployeeSearchResult } from "./features/employees/components/EmployeeSearchResult";
-import { DeleteEmployeeDialog } from "./features/employees/components/DeleteEmployeeDialog";
 import { ErrorState, LoadingState } from "./components/common/AsyncState";
 import type { Country } from "./features/employees/types/employee.types";
+
+// These interaction-only components are split out of the initial list bundle.
+// Keep lazy declarations at module scope so React can cache their identity.
+const EmployeeForm = lazy(() =>
+  import("./features/employees/components/EmployeeForm").then((module) => ({
+    default: module.EmployeeForm,
+  })),
+);
+const DeleteEmployeeDialog = lazy(() =>
+  import("./features/employees/components/DeleteEmployeeDialog").then(
+    (module) => ({ default: module.DeleteEmployeeDialog }),
+  ),
+);
 
 const EMPLOYEES_PER_PAGE = 5;
 const NOT_AVAILABLE = "Not available";
@@ -143,7 +154,7 @@ export function EmployeeTable({
   };
 
   return (
-    <Paper variant="outlined" sx={{ overflowX: "auto" }}>
+    <Paper variant="outlined" sx={{ overflowX: "auto", mb: { xs: 8, sm: 0 } }}>
       <Table aria-label="employees" sx={{ minWidth: 680 }}>
         <TableHead>
           <TableRow>
@@ -374,7 +385,12 @@ export function App() {
             <Typography variant="overline" color="primary.main">
               Directory
             </Typography>
-            <Typography variant="h4" component="h2" gutterBottom sx={{ mt: 0.5 }}>
+            <Typography
+              variant="h4"
+              component="h2"
+              gutterBottom
+              sx={{ mt: 0.5 }}
+            >
               Employees
             </Typography>
             <Typography color="text.secondary">
@@ -406,7 +422,9 @@ export function App() {
                 {searchState.isLoading && (
                   <LoadingState label="Searching employee..." />
                 )}
-                {searchResult && <EmployeeSearchResult employee={searchResult} />}
+                {searchResult && (
+                  <EmployeeSearchResult employee={searchResult} />
+                )}
                 {searchError === "not-found" && (
                   <Alert severity="info">
                     Employee not found. No employee matches this ID.
@@ -476,21 +494,31 @@ export function App() {
         fullWidth
         maxWidth="md"
       >
-        <EmployeeForm
-          employee={formEmployee}
-          countries={countriesQuery.data ?? []}
-          isSaving={createState.isLoading || updateState.isLoading}
-          error={formError}
-          onSubmit={handleSave}
-          onCancel={() => setFormEmployee(undefined)}
-        />
+        {isFormOpen && (
+          <Suspense
+            fallback={<LoadingState label="Loading employee form..." />}
+          >
+            <EmployeeForm
+              employee={formEmployee}
+              countries={countriesQuery.data ?? []}
+              isSaving={createState.isLoading || updateState.isLoading}
+              error={formError}
+              onSubmit={handleSave}
+              onCancel={() => setFormEmployee(undefined)}
+            />
+          </Suspense>
+        )}
       </Dialog>
-      <DeleteEmployeeDialog
-        employee={deleteEmployee}
-        isDeleting={deleteState.isLoading}
-        onCancel={() => setDeleteEmployee(null)}
-        onConfirm={handleDelete}
-      />
+      {deleteEmployee && (
+        <Suspense fallback={null}>
+          <DeleteEmployeeDialog
+            employee={deleteEmployee}
+            isDeleting={deleteState.isLoading}
+            onCancel={() => setDeleteEmployee(null)}
+            onConfirm={handleDelete}
+          />
+        </Suspense>
+      )}
       <Snackbar
         open={!!notice}
         autoHideDuration={4000}
