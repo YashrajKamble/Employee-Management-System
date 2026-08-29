@@ -62,28 +62,28 @@ type SortKey = "name" | "email" | "mobile" | "country";
 type SortDirection = "asc" | "desc";
 
 const formatTitleCase = (value: string) =>
-  value
+  (value ?? "")
     .trim()
     .toLocaleLowerCase()
     .replace(/(^|[\s'-])\p{L}/gu, (character) => character.toLocaleUpperCase())
     .replace(/\s+/g, " ");
 
 const formatNameOrCountry = (value: string) => {
-  const normalizedValue = value.trim().replace(/\s+/g, " ");
+  const normalizedValue = (value ?? "").trim().replace(/\s+/g, " ");
   return normalizedValue && /^\p{L}[\p{L}\s'-]*$/u.test(normalizedValue)
     ? formatTitleCase(normalizedValue)
     : NOT_AVAILABLE;
 };
 
 const formatEmail = (value: string) => {
-  const normalizedValue = value.trim().toLocaleLowerCase();
+  const normalizedValue = (value ?? "").trim().toLocaleLowerCase();
   return normalizedValue && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedValue)
     ? normalizedValue
     : NOT_AVAILABLE;
 };
 
 const formatMobile = (value: string) => {
-  const normalizedValue = value.trim();
+  const normalizedValue = (value ?? "").trim();
   return /^\d{10}$/.test(normalizedValue) ? normalizedValue : NOT_AVAILABLE;
 };
 
@@ -129,8 +129,8 @@ export function EmployeeTable({
         );
   const visibleEmployees = sortKey
     ? [...paginatedEmployees].sort((firstEmployee, secondEmployee) => {
-        const comparison = firstEmployee[sortKey].localeCompare(
-          secondEmployee[sortKey],
+        const comparison = (firstEmployee[sortKey] ?? "").localeCompare(
+          secondEmployee[sortKey] ?? "",
           undefined,
           { numeric: sortKey === "mobile", sensitivity: "base" },
         );
@@ -139,7 +139,7 @@ export function EmployeeTable({
           return sortDirection === "asc" ? comparison : -comparison;
         }
 
-        return firstEmployee.id.localeCompare(secondEmployee.id);
+        return (firstEmployee.id ?? "").localeCompare(secondEmployee.id ?? "");
       })
     : paginatedEmployees;
   const firstVisibleIndex =
@@ -187,16 +187,16 @@ export function EmployeeTable({
                 <Stack direction="row" alignItems="center" gap={1}>
                   {countries.find(
                     (country) =>
-                      country.country.trim().toLowerCase() ===
-                      employee.country.trim().toLowerCase(),
+                      (country.country ?? "").trim().toLowerCase() ===
+                      (employee.country ?? "").trim().toLowerCase(),
                   )?.flag && (
                     <Box
                       component="img"
                       src={
                         countries.find(
                           (country) =>
-                            country.country.trim().toLowerCase() ===
-                            employee.country.trim().toLowerCase(),
+                            (country.country ?? "").trim().toLowerCase() ===
+                            (employee.country ?? "").trim().toLowerCase(),
                         )?.flag
                       }
                       alt={`${formatNameOrCountry(employee.country)} flag`}
@@ -302,10 +302,12 @@ export function App() {
   );
   const [deleteEmployee, setDeleteEmployee] = useState<Employee | null>(null);
   const [searchResult, setSearchResult] = useState<Employee | null>(null);
+  const [searchedId, setSearchedId] = useState("");
   const [searchError, setSearchError] = useState<"not-found" | "error" | null>(
     null,
   );
   const [notice, setNotice] = useState("");
+  const [deleteError, setDeleteError] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(EMPLOYEES_PER_PAGE);
   const isFormOpen = formEmployee !== undefined;
@@ -325,6 +327,7 @@ export function App() {
     setCurrentPage(1);
   };
   const handleSearch = async (id: string) => {
+    setSearchedId(id);
     setSearchError(null);
     setSearchResult(null);
     try {
@@ -357,7 +360,7 @@ export function App() {
       setDeleteEmployee(null);
       setNotice("Employee deleted successfully.");
     } catch {
-      setNotice("Unable to delete employee. Please try again.");
+      setDeleteError("Unable to delete employee. Please try again.");
     }
   };
   const formError =
@@ -417,6 +420,7 @@ export function App() {
                   onClear={() => {
                     setSearchResult(null);
                     setSearchError(null);
+                    setSearchedId("");
                   }}
                 />
                 {searchState.isLoading && (
@@ -431,7 +435,10 @@ export function App() {
                   </Alert>
                 )}
                 {searchError === "error" && (
-                  <ErrorState message="Unable to search employee." />
+                  <ErrorState
+                    message="Unable to search employee."
+                    onRetry={() => handleSearch(searchedId)}
+                  />
                 )}
               </Stack>
             </Paper>
@@ -479,7 +486,10 @@ export function App() {
                 rowsPerPage={rowsPerPage}
                 onRowsPerPageChange={handleRowsPerPageChange}
                 onEdit={setFormEmployee}
-                onDelete={setDeleteEmployee}
+                onDelete={(employee) => {
+                  setDeleteError("");
+                  setDeleteEmployee(employee);
+                }}
               />
             )}
         </Stack>
@@ -501,6 +511,9 @@ export function App() {
             <EmployeeForm
               employee={formEmployee}
               countries={countriesQuery.data ?? []}
+              countriesLoading={countriesQuery.isLoading}
+              countriesError={countriesQuery.isError}
+              onRetryCountries={countriesQuery.refetch}
               isSaving={createState.isLoading || updateState.isLoading}
               error={formError}
               onSubmit={handleSave}
@@ -514,6 +527,7 @@ export function App() {
           <DeleteEmployeeDialog
             employee={deleteEmployee}
             isDeleting={deleteState.isLoading}
+            error={deleteError}
             onCancel={() => setDeleteEmployee(null)}
             onConfirm={handleDelete}
           />
