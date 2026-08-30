@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "./App";
 
@@ -13,15 +13,17 @@ const mocks = vi.hoisted(() => ({
     district: "New Delhi",
   },
   employeesQuery: {
-    data: [{
-      id: "1",
-      name: "Ada Lovelace",
-      email: "ada@example.com",
-      mobile: "1234567890",
-      country: "India",
-      state: "Delhi",
-      district: "New Delhi",
-    }],
+    data: [
+      {
+        id: "1",
+        name: "Ada Lovelace",
+        email: "ada@example.com",
+        mobile: "1234567890",
+        country: "India",
+        state: "Delhi",
+        district: "New Delhi",
+      },
+    ],
     isLoading: false,
     isError: false,
     refetch: vi.fn(),
@@ -34,17 +36,28 @@ const mocks = vi.hoisted(() => ({
   },
   search: vi.fn(() => ({ unwrap: vi.fn().mockResolvedValue({}) })),
   create: vi.fn(() => ({ unwrap: vi.fn().mockResolvedValue({}) })),
+  createState: {
+    isLoading: false,
+    isError: false,
+    error: undefined as unknown,
+  },
   update: vi.fn(() => ({ unwrap: vi.fn().mockResolvedValue({}) })),
+  updateState: {
+    isLoading: false,
+    isError: false,
+    error: undefined as unknown,
+  },
   remove: vi.fn(() => ({ unwrap: vi.fn().mockResolvedValue({}) })),
+  removeState: { isLoading: false },
 }));
 
 vi.mock("./features/employees/api/employeeApi", () => ({
   useGetEmployeesQuery: () => mocks.employeesQuery,
   useGetCountriesQuery: () => mocks.countriesQuery,
   useLazyGetEmployeeByIdQuery: () => [mocks.search, { isLoading: false }],
-  useCreateEmployeeMutation: () => [mocks.create, { isLoading: false, isError: false }],
-  useUpdateEmployeeMutation: () => [mocks.update, { isLoading: false, isError: false }],
-  useDeleteEmployeeMutation: () => [mocks.remove, { isLoading: false }],
+  useCreateEmployeeMutation: () => [mocks.create, mocks.createState],
+  useUpdateEmployeeMutation: () => [mocks.update, mocks.updateState],
+  useDeleteEmployeeMutation: () => [mocks.remove, mocks.removeState],
 }));
 
 function renderApp() {
@@ -76,6 +89,9 @@ describe("App CRUD UI flows", () => {
     mocks.create.mockClear();
     mocks.update.mockClear();
     mocks.remove.mockClear();
+    mocks.createState.error = undefined;
+    mocks.updateState.error = undefined;
+    mocks.removeState.isLoading = false;
   });
 
   it("submits a valid Add Employee form and shows success feedback", async () => {
@@ -88,7 +104,41 @@ describe("App CRUD UI flows", () => {
     await user.click(screen.getByRole("button", { name: "Add Employee" }));
 
     expect(mocks.create).toHaveBeenCalledOnce();
-    expect(await screen.findByText("Employee added successfully.")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Employee added successfully."),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps Add Employee open and shows retry feedback after a failure", async () => {
+    const user = userEvent.setup();
+    mocks.create
+      .mockImplementationOnce(() => ({
+        unwrap: vi.fn().mockRejectedValue({ status: 500 }),
+      }))
+      .mockImplementationOnce(() => ({
+        unwrap: vi.fn().mockResolvedValue({}),
+      }));
+    const { rerender } = renderApp();
+
+    await user.click(screen.getByRole("button", { name: /Add Employee/ }));
+    await screen.findByRole("heading", { name: "Add Employee" });
+    await fillEmployeeForm(user);
+    await user.click(screen.getByRole("button", { name: "Add Employee" }));
+
+    mocks.createState.error = { status: 500 };
+    rerender(<App />);
+    expect(
+      screen.getByRole("heading", { name: "Add Employee" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Unable to save employee. Please check the details and try again.",
+      ),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    expect(
+      await screen.findByText("Employee added successfully."),
+    ).toBeInTheDocument();
   });
 
   it("blocks Add until Name and Email are valid and preserves other validation", async () => {
@@ -103,7 +153,9 @@ describe("App CRUD UI flows", () => {
     await user.type(screen.getByLabelText("Name"), "ada lovelace");
     await user.type(screen.getByLabelText("Email"), "Ada@example.com");
     expect(screen.getByText(/Each name word must start/)).toBeInTheDocument();
-    expect(screen.getByText(/email address must be lowercase/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/email address must be lowercase/),
+    ).toBeInTheDocument();
     expect(addButton).toBeDisabled();
 
     await user.clear(screen.getByLabelText("Name"));
@@ -113,7 +165,9 @@ describe("App CRUD UI flows", () => {
     expect(addButton).toBeEnabled();
     await user.click(addButton);
 
-    expect(screen.getByText("Mobile must contain exactly 10 digits.")).toBeInTheDocument();
+    expect(
+      screen.getByText("Mobile must contain exactly 10 digits."),
+    ).toBeInTheDocument();
     expect(screen.getByText("Country is required.")).toBeInTheDocument();
   });
 
@@ -171,7 +225,29 @@ describe("App CRUD UI flows", () => {
     mocks.countriesQuery.isError = true;
     rerender(<App />);
     await user.click(screen.getByRole("button", { name: /Add Employee/ }));
-    expect(await screen.findByText("Unable to load countries.")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Unable to load countries."),
+    ).toBeInTheDocument();
+  });
+
+  it("shows an actionable empty employee state", async () => {
+    const user = userEvent.setup();
+    mocks.employeesQuery.data = [];
+    renderApp();
+
+    const emptyState = screen.getByRole("alert");
+    expect(
+      within(emptyState).getByText(
+        "No employees found. Add your first employee.",
+      ),
+    ).toBeInTheDocument();
+
+    await user.click(
+      within(emptyState).getByRole("button", { name: "Add Employee" }),
+    );
+    expect(
+      await screen.findByRole("heading", { name: "Add Employee" }),
+    ).toBeInTheDocument();
   });
 
   it("prefills Edit Employee and submits the updated values", async () => {
@@ -190,32 +266,100 @@ describe("App CRUD UI flows", () => {
       id: "1",
       body: expect.objectContaining({ name: "Grace Hopper" }),
     });
-    expect(await screen.findByText("Employee updated successfully.")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Employee updated successfully."),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps Edit Employee open after a mutation failure", async () => {
+    const user = userEvent.setup();
+    mocks.update.mockImplementationOnce(() => ({
+      unwrap: vi.fn().mockRejectedValue({ status: 500 }),
+    }));
+    const { rerender } = renderApp();
+
+    await user.click(screen.getByRole("button", { name: "Edit Ada Lovelace" }));
+    await screen.findByRole("heading", { name: "Edit Employee" });
+    await user.click(screen.getByRole("button", { name: "Save Changes" }));
+
+    mocks.updateState.error = { status: 500 };
+    rerender(<App />);
+    expect(
+      screen.getByRole("heading", { name: "Edit Employee" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Unable to save employee. Please check the details and try again.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("Employee updated successfully."),
+    ).not.toBeInTheDocument();
   });
 
   it("opens delete confirmation and does not delete when cancelled", async () => {
     const user = userEvent.setup();
     renderApp();
 
-    await user.click(screen.getByRole("button", { name: "Delete Ada Lovelace" }));
+    await user.click(
+      screen.getByRole("button", { name: "Delete Ada Lovelace" }),
+    );
     await screen.findByRole("heading", { name: "Delete Employee?" });
-    expect(screen.getByRole("heading", { name: "Delete Employee?" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Delete Employee?" }),
+    ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Cancel" }));
 
     expect(mocks.remove).not.toHaveBeenCalled();
-    expect(screen.queryByRole("heading", { name: "Delete Employee?" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Delete Employee?" }),
+    ).not.toBeInTheDocument();
   });
 
   it("deletes after confirmation and shows success feedback", async () => {
     const user = userEvent.setup();
     renderApp();
 
-    await user.click(screen.getByRole("button", { name: "Delete Ada Lovelace" }));
+    await user.click(
+      screen.getByRole("button", { name: "Delete Ada Lovelace" }),
+    );
     await screen.findByRole("heading", { name: "Delete Employee?" });
     await user.click(screen.getByRole("button", { name: "Delete" }));
 
     expect(mocks.remove).toHaveBeenCalledWith("1");
-    expect(await screen.findByText("Employee deleted successfully.")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Employee deleted successfully."),
+    ).toBeInTheDocument();
+  });
+
+  it("prevents duplicate delete requests while deletion is in progress", async () => {
+    const user = userEvent.setup();
+    let resolveDelete!: () => void;
+    mocks.remove.mockImplementationOnce(() => ({
+      unwrap: vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveDelete = resolve;
+          }),
+      ),
+    }));
+    const { rerender } = renderApp();
+
+    await user.click(
+      screen.getByRole("button", { name: "Delete Ada Lovelace" }),
+    );
+    await screen.findByRole("heading", { name: "Delete Employee?" });
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+
+    mocks.removeState.isLoading = true;
+    rerender(<App />);
+    const deletingButton = screen.getByRole("button", { name: "Deleting..." });
+    expect(deletingButton).toBeDisabled();
+    expect(mocks.remove).toHaveBeenCalledOnce();
+
+    await act(async () => {
+      resolveDelete();
+    });
   });
 
   it("keeps delete confirmation open and retries after a delete failure", async () => {
@@ -224,16 +368,24 @@ describe("App CRUD UI flows", () => {
       .mockImplementationOnce(() => ({
         unwrap: vi.fn().mockRejectedValue({ status: 500 }),
       }))
-      .mockImplementationOnce(() => ({ unwrap: vi.fn().mockResolvedValue({}) }));
+      .mockImplementationOnce(() => ({
+        unwrap: vi.fn().mockResolvedValue({}),
+      }));
     renderApp();
 
-    await user.click(screen.getByRole("button", { name: "Delete Ada Lovelace" }));
+    await user.click(
+      screen.getByRole("button", { name: "Delete Ada Lovelace" }),
+    );
     await screen.findByRole("heading", { name: "Delete Employee?" });
     await user.click(screen.getByRole("button", { name: "Delete" }));
-    expect(await screen.findByText("Unable to delete employee. Please try again.")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Unable to delete employee. Please try again."),
+    ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Try again" }));
 
     expect(mocks.remove).toHaveBeenCalledTimes(2);
-    expect(await screen.findByText("Employee deleted successfully.")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Employee deleted successfully."),
+    ).toBeInTheDocument();
   });
 });

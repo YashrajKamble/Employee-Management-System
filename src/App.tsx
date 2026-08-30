@@ -27,10 +27,7 @@ import { EmployeeSearch } from "./features/employees/components/EmployeeSearch";
 import { EmployeeSearchResult } from "./features/employees/components/EmployeeSearchResult";
 import { EmployeeTable } from "./features/employees/components/EmployeeTable";
 import { ErrorState, LoadingState } from "./components/common/AsyncState";
-import {
-  getApiErrorMessage,
-  getApiErrorStatus,
-} from "./lib/apiError";
+import { getApiErrorMessage, getApiErrorStatus } from "./lib/apiError";
 
 // These interaction-only components are split out of the initial list bundle.
 // Keep lazy declarations at module scope so React can cache their identity.
@@ -48,17 +45,21 @@ const DeleteEmployeeDialog = lazy(() =>
 export { EmployeeTable } from "./features/employees/components/EmployeeTable";
 
 const EMPLOYEES_PER_PAGE = 5;
+type EmployeeFormState =
+  | { mode: "closed" }
+  | { mode: "create" }
+  | { mode: "edit"; employee: Employee };
 
 export function App() {
   const employeesQuery = useGetEmployeesQuery();
   const countriesQuery = useGetCountriesQuery();
-  const [search, searchState] = useLazyGetEmployeeByIdQuery();
-  const [create, createState] = useCreateEmployeeMutation();
-  const [update, updateState] = useUpdateEmployeeMutation();
-  const [remove, deleteState] = useDeleteEmployeeMutation();
-  const [formEmployee, setFormEmployee] = useState<Employee | null | undefined>(
-    undefined,
-  );
+  const [searchEmployee, searchState] = useLazyGetEmployeeByIdQuery();
+  const [createEmployee, createState] = useCreateEmployeeMutation();
+  const [updateEmployee, updateState] = useUpdateEmployeeMutation();
+  const [deleteEmployeeRequest, deleteState] = useDeleteEmployeeMutation();
+  const [formState, setFormState] = useState<EmployeeFormState>({
+    mode: "closed",
+  });
   const [deleteEmployee, setDeleteEmployee] = useState<Employee | null>(null);
   const [searchResult, setSearchResult] = useState<Employee | null>(null);
   const [searchedId, setSearchedId] = useState("");
@@ -69,7 +70,8 @@ export function App() {
   const [deleteError, setDeleteError] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(EMPLOYEES_PER_PAGE);
-  const isFormOpen = formEmployee !== undefined;
+  const isFormOpen = formState.mode !== "closed";
+  const formEmployee = formState.mode === "edit" ? formState.employee : null;
 
   useEffect(() => {
     const totalPages = Math.max(
@@ -90,19 +92,19 @@ export function App() {
     setSearchError(null);
     setSearchResult(null);
     try {
-      setSearchResult(await search(id).unwrap());
+      setSearchResult(await searchEmployee(id).unwrap());
     } catch (error) {
-      setSearchError(
-        getApiErrorStatus(error) === 404 ? "not-found" : "error",
-      );
+      setSearchError(getApiErrorStatus(error) === 404 ? "not-found" : "error");
     }
   };
   const handleSave = async (values: EmployeeFormValues) => {
     try {
-      if (formEmployee)
-        await update({ id: formEmployee.id, body: values }).unwrap();
-      else await create(values).unwrap();
-      setFormEmployee(undefined);
+      if (formEmployee) {
+        await updateEmployee({ id: formEmployee.id, body: values }).unwrap();
+      } else {
+        await createEmployee(values).unwrap();
+      }
+      setFormState({ mode: "closed" });
       setNotice(
         formEmployee
           ? "Employee updated successfully."
@@ -115,12 +117,15 @@ export function App() {
   const handleDelete = async () => {
     if (!deleteEmployee) return;
     try {
-      await remove(deleteEmployee.id).unwrap();
+      await deleteEmployeeRequest(deleteEmployee.id).unwrap();
       setDeleteEmployee(null);
       setNotice("Employee deleted successfully.");
     } catch (error) {
       setDeleteError(
-        getApiErrorMessage(error, "Unable to delete employee. Please try again."),
+        getApiErrorMessage(
+          error,
+          "Unable to delete employee. Please try again.",
+        ),
       );
     }
   };
@@ -221,7 +226,10 @@ export function App() {
                 Employee list
               </Typography>
             </Box>
-            <Button variant="contained" onClick={() => setFormEmployee(null)}>
+            <Button
+              variant="contained"
+              onClick={() => setFormState({ mode: "create" })}
+            >
               ＋ Add Employee
             </Button>
           </Stack>
@@ -237,7 +245,19 @@ export function App() {
           {!employeesQuery.isLoading &&
             !employeesQuery.isError &&
             employeesQuery.data?.length === 0 && (
-              <Alert severity="info">No employees found.</Alert>
+              <Alert
+                severity="info"
+                action={
+                  <Button
+                    color="inherit"
+                    onClick={() => setFormState({ mode: "create" })}
+                  >
+                    Add Employee
+                  </Button>
+                }
+              >
+                No employees found. Add your first employee.
+              </Alert>
             )}
           {!employeesQuery.isLoading &&
             !employeesQuery.isError &&
@@ -249,7 +269,7 @@ export function App() {
                 onPageChange={setCurrentPage}
                 rowsPerPage={rowsPerPage}
                 onRowsPerPageChange={handleRowsPerPageChange}
-                onEdit={setFormEmployee}
+                onEdit={(employee) => setFormState({ mode: "edit", employee })}
                 onDelete={(employee) => {
                   setDeleteError("");
                   setDeleteEmployee(employee);
@@ -263,7 +283,7 @@ export function App() {
         onClose={
           createState.isLoading || updateState.isLoading
             ? undefined
-            : () => setFormEmployee(undefined)
+            : () => setFormState({ mode: "closed" })
         }
         fullWidth
         maxWidth="md"
@@ -281,7 +301,7 @@ export function App() {
               isSaving={createState.isLoading || updateState.isLoading}
               error={formError}
               onSubmit={handleSave}
-              onCancel={() => setFormEmployee(undefined)}
+              onCancel={() => setFormState({ mode: "closed" })}
             />
           </Suspense>
         )}
