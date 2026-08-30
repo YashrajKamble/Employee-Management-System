@@ -6,7 +6,6 @@ import {
   Button,
   Container,
   Dialog,
-  Link,
   Paper,
   Snackbar,
   Stack,
@@ -31,6 +30,7 @@ import {
   LoadingState,
 } from "../../../components/common/AsyncState";
 import { getApiErrorMessage, getApiErrorStatus } from "../../../lib/apiError";
+import { EMPLOYEES_PER_PAGE } from "../constants";
 
 const EmployeeForm = lazy(() =>
   import("../components/EmployeeForm").then((module) => ({
@@ -43,7 +43,6 @@ const DeleteEmployeeDialog = lazy(() =>
   })),
 );
 
-const EMPLOYEES_PER_PAGE = 5;
 type EmployeeFormState =
   | { mode: "closed" }
   | { mode: "create" }
@@ -132,13 +131,13 @@ export function EmployeesPage() {
     }
   };
 
-  const formError =
-    createState.error || updateState.error
-      ? getApiErrorMessage(
-          createState.error ?? updateState.error,
-          "Unable to save employee. Please check the details and try again.",
-        )
-      : undefined;
+  const saveError = formEmployee ? updateState.error : createState.error;
+  const formError = saveError
+    ? getApiErrorMessage(
+        saveError,
+        "Unable to save employee. Please check the details and try again.",
+      )
+    : undefined;
 
   return (
     <>
@@ -318,31 +317,6 @@ export function EmployeesPage() {
         onClose={() => setNotice("")}
         message={notice}
       />
-      <Paper
-        elevation={3}
-        sx={{
-          position: "fixed",
-          right: { xs: 12, sm: 20 },
-          bottom: { xs: 12, sm: 20 },
-          zIndex: (theme) => theme.zIndex.appBar,
-          px: 1.5,
-          py: 0.75,
-          border: 1,
-          borderColor: "divider",
-        }}
-      >
-        <Link
-          href="https://github.com/YashrajKamble"
-          target="_blank"
-          rel="noopener noreferrer"
-          underline="hover"
-          color="text.secondary"
-          aria-label="Made by Yashraj Kamble, open GitHub profile"
-          sx={{ fontSize: { xs: "0.75rem", sm: "0.8125rem" }, fontWeight: 600 }}
-        >
-          Made by Yashraj Kamble
-        </Link>
-      </Paper>
     </>
   );
 }
